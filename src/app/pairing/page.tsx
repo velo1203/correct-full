@@ -54,7 +54,6 @@ export default function PairingPage() {
 
                     <div className="bg-blue-light bg-opacity-30 rounded-xl p-3 border border-blue-light border-opacity-50">
                         <div className="flex items-start">
-                            <div className="w-9 h-9 bg-primary rounded-full flex items-center justify-center mr-2.5 flex-shrink-0"></div>
                             <div>
                                 <h4 className="text-sm font-semibold text-dark mb-1.5">
                                     블루투스 연결
@@ -70,6 +69,11 @@ export default function PairingPage() {
                             </div>
                         </div>
                     </div>
+
+                    {/* Bluetooth Connect Button */}
+                    <button className="w-full py-3.5 bg-primary text-white rounded-xl text-sm font-semibold hover:opacity-90 active:scale-[0.98] transition-all mt-4">
+                        블루투스 연결하기
+                    </button>
                 </div>
             </main>
         </div>

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { config } from "@fortawesome/fontawesome-svg-core";
 import "@fortawesome/fontawesome-svg-core/styles.css";
@@ -8,6 +8,13 @@ config.autoAddCss = false;
 export const metadata: Metadata = {
     title: "CORRECT - 최고의 자세를 반듯다",
     description: "자세 교정 스마트 의자",
+};
+
+export const viewport: Viewport = {
+    width: "device-width",
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
 };
 
 export default function RootLayout({
@@ -26,8 +33,9 @@ export default function RootLayout({
                 />
             </head>
             <body className="antialiased font-sans">
-                <div className="flex justify-center items-center min-h-screen bg-gray-200">
-                    <div className="w-full max-w-[393px] h-screen bg-white relative overflow-hidden">
+                {/* 데스크톱: 중앙 정렬 + 최대 너비, 모바일: 전체 화면 */}
+                <div className="min-h-screen bg-gray-200 md:flex md:justify-center md:items-center">
+                    <div className="w-full md:max-w-[393px] min-h-screen bg-white relative overflow-hidden md:h-screen md:shadow-2xl">
                         {children}
                     </div>
                 </div>

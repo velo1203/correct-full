@@ -8,6 +8,14 @@ import {
     faRotateRight,
 } from "@fortawesome/free-solid-svg-icons";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
+import { useEffect, useState } from "react";
+import {
+    getDeviceFullData,
+    Device,
+    PostureData,
+    StretchingRecommendation,
+} from "@/lib/supabase";
 
 // Battery Card Component
 const BatteryCard = ({
@@ -21,17 +29,24 @@ const BatteryCard = ({
 }) => (
     <div className="bg-white rounded-xl p-4 border border-border flex items-center justify-between hover:border-primary hover:ring-2 hover:ring-primary hover:ring-opacity-10 transition-all">
         <div>
-            <p className="text-sm text-gray mb-1">{label}</p>
-            <p className="text-xl font-bold text-primary">{value}</p>
+            <p className="text-xs text-gray mb-1">{label}</p>
+            <p className="text-2xl font-bold text-primary">{value}</p>
         </div>
         {icon && <div>{icon}</div>}
     </div>
 );
 
 // Toggle Switch Component
-const ToggleSwitch = ({ enabled }: { enabled: boolean }) => (
-    <div
-        className={`w-16 h-8 rounded-full relative transition-colors ${
+const ToggleSwitch = ({
+    enabled,
+    onClick,
+}: {
+    enabled: boolean;
+    onClick: () => void;
+}) => (
+    <button
+        onClick={onClick}
+        className={`w-16 h-8 rounded-full relative transition-colors active:scale-95 ${
             enabled ? "bg-primary" : "bg-gray-light"
         }`}
     >
@@ -40,12 +55,11 @@ const ToggleSwitch = ({ enabled }: { enabled: boolean }) => (
                 enabled ? "right-1" : "left-1"
             }`}
         ></div>
-    </div>
+    </button>
 );
 
-const PostureChart = () => {
-    const chartData = [40, 30, 50, 35, 60, 45, 70, 55, 40, 65];
-
+// Chart Component
+const PostureChart = ({ chartData }: { chartData: number[] }) => {
     return (
         <div className="h-32 bg-blue-light bg-opacity-20 rounded-lg flex items-end justify-around px-3 pb-3 relative border border-border-light">
             {/* Grid lines */}
@@ -84,8 +98,107 @@ const Section = ({
     </section>
 );
 
-export default function DeviceDetailPage() {
+export default function DeviceDetailPage({
+    params,
+}: {
+    params: { id: string };
+}) {
     const router = useRouter();
+    const [device, setDevice] = useState<Device | null>(null);
+    const [postureData, setPostureData] = useState<PostureData | null>(null);
+    const [stretching, setStretching] =
+        useState<StretchingRecommendation | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
+
+    useEffect(() => {
+        async function loadData() {
+            try {
+                const deviceId = parseInt(params.id);
+                const data = await getDeviceFullData(deviceId);
+                setDevice(data.device);
+                setPostureData(data.postureData);
+                setStretching(data.stretchingRecommendation);
+            } catch (err: any) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        loadData();
+    }, [params.id]);
+
+    // 자세 데이터 새로고침
+    const handleRefreshPosture = async () => {
+        setRefreshing(true);
+        try {
+            const response = await fetch(`/api/posture/${params.id}`);
+            const result = await response.json();
+            if (result.success && result.data) {
+                setPostureData(result.data);
+            }
+        } catch (err) {
+            console.error("Failed to refresh posture data:", err);
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
+    // 장치 ON/OFF 토글
+    const handleToggleDevice = async () => {
+        if (!device) return;
+
+        const newActiveState = !device.is_active;
+
+        // 낙관적 업데이트
+        setDevice({ ...device, is_active: newActiveState });
+
+        try {
+            const response = await fetch(`/api/device/${params.id}`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-API-Key": "hello",
+                },
+                body: JSON.stringify({
+                    is_active: newActiveState,
+                }),
+            });
+
+            const result = await response.json();
+
+            if (!result.success) {
+                // 실패 시 원래 상태로 되돌림
+                setDevice({ ...device, is_active: !newActiveState });
+                alert("상태 변경에 실패했습니다.");
+            }
+        } catch (err) {
+            // 에러 시 원래 상태로 되돌림
+            setDevice({ ...device, is_active: !newActiveState });
+            console.error("Failed to toggle device:", err);
+            alert("상태 변경에 실패했습니다.");
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="h-screen bg-background flex items-center justify-center">
+                <p className="text-gray">로딩 중...</p>
+            </div>
+        );
+    }
+
+    if (error || !device || !postureData || !stretching) {
+        return (
+            <div className="h-screen bg-background flex items-center justify-center">
+                <p className="text-red-500">
+                    오류: 데이터를 불러올 수 없습니다
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div className="h-screen bg-background flex flex-col overflow-y-auto">
@@ -129,7 +242,7 @@ export default function DeviceDetailPage() {
                     <div className="space-y-2.5">
                         <BatteryCard
                             label="배터리 충전"
-                            value="84%"
+                            value={`${device.battery_level}%`}
                             icon={
                                 <div className="w-14 h-14 bg-blue-light bg-opacity-40 rounded-lg flex items-center justify-center border border-border-light">
                                     <FontAwesomeIcon
@@ -142,17 +255,25 @@ export default function DeviceDetailPage() {
 
                         <BatteryCard
                             label="활성상태"
-                            value="ON"
-                            icon={<ToggleSwitch enabled={true} />}
+                            value={device.is_active ? "ON" : "OFF"}
+                            icon={
+                                <ToggleSwitch
+                                    enabled={device.is_active}
+                                    onClick={handleToggleDevice}
+                                />
+                            }
                         />
                     </div>
                 </Section>
 
+                {/* Posture Section */}
                 <Section title="자세">
                     <div className="bg-white rounded-xl p-4 border border-border">
-                        <p className="text-xs text-gray mb-0.5">3시간 통계</p>
-                        <p className="text-xl font-bold text-primary mb-4">
-                            자세 종음
+                        <p className="text-xs text-gray mb-0.5">
+                            {postureData.statistics_hours}시간 통계
+                        </p>
+                        <p className="text-2xl font-bold text-primary mb-4">
+                            {postureData.posture_score}
                         </p>
 
                         <div>
@@ -160,7 +281,13 @@ export default function DeviceDetailPage() {
                                 <p className="text-xs text-gray">
                                     자세 상태 기록
                                 </p>
-                                <button className="w-7 h-7 flex items-center justify-center hover:bg-blue-light hover:bg-opacity-30 rounded-full active:scale-95 transition-all">
+                                <button
+                                    onClick={handleRefreshPosture}
+                                    disabled={refreshing}
+                                    className={`w-7 h-7 flex items-center justify-center hover:bg-blue-light hover:bg-opacity-30 rounded-full active:scale-95 transition-all ${
+                                        refreshing ? "animate-spin" : ""
+                                    }`}
+                                >
                                     <FontAwesomeIcon
                                         icon={faRotateRight}
                                         className="text-primary text-xs"
@@ -168,19 +295,16 @@ export default function DeviceDetailPage() {
                                 </button>
                             </div>
 
-                            <PostureChart />
+                            <PostureChart chartData={postureData.chart_data} />
                         </div>
                     </div>
                 </Section>
 
+                {/* Stretching Section */}
                 <Section title="스트레칭">
                     <div className="bg-white rounded-xl p-4 border border-border">
-                        <p className="text-sm text-gray leading-relaxed">
-                            허리 통증 완화를 위해 아침 저녁으로{" "}
-                            <span className="text-primary font-semibold">
-                                무릎 꿇어앉기
-                            </span>{" "}
-                            스트레칭을 10초씩 해보세요.
+                        <p className="text-xs text-gray leading-relaxed">
+                            {stretching.recommendation_text}
                         </p>
                     </div>
                 </Section>

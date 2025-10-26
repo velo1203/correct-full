@@ -2,14 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-
-interface Device {
-    id: number;
-    name: string;
-    battery: number;
-    status: string;
-    statusColor: string;
-}
+import { useEffect, useState } from "react";
+import { getAllDevices, Device } from "@/lib/supabase";
 
 const DeviceCard = ({
     device,
@@ -18,6 +12,16 @@ const DeviceCard = ({
     device: Device;
     onClick: () => void;
 }) => {
+    const getBatteryColor = (battery: number) => {
+        if (battery < 30) return "text-red-500";
+        return "text-primary";
+    };
+
+    const getStatusColor = (status: string) => {
+        if (status.includes("점검")) return "text-red-500";
+        return "text-primary";
+    };
+
     return (
         <div
             onClick={onClick}
@@ -43,16 +47,18 @@ const DeviceCard = ({
                     <p className="text-xs text-gray mb-0.5">
                         배터리 충전{" "}
                         <span
-                            className={
-                                device.battery < 30
-                                    ? "text-red-500 font-medium"
-                                    : "text-primary font-medium"
-                            }
+                            className={`${getBatteryColor(
+                                device.battery_level
+                            )} font-medium`}
                         >
-                            {device.battery}%
+                            {device.battery_level}%
                         </span>
                     </p>
-                    <p className={`text-xs font-medium ${device.statusColor}`}>
+                    <p
+                        className={`text-xs font-medium ${getStatusColor(
+                            device.status
+                        )}`}
+                    >
                         {device.status}
                     </p>
                 </div>
@@ -63,23 +69,40 @@ const DeviceCard = ({
 
 export default function DevicesPage() {
     const router = useRouter();
+    const [devices, setDevices] = useState<Device[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    const devices: Device[] = [
-        {
-            id: 1,
-            name: "CORRECT 모델1",
-            battery: 84,
-            status: "상태 청결중",
-            statusColor: "text-primary",
-        },
-        {
-            id: 2,
-            name: "CORRECT 모델2",
-            battery: 23,
-            status: "상태 점검",
-            statusColor: "text-red-500",
-        },
-    ];
+    useEffect(() => {
+        async function loadDevices() {
+            try {
+                const data = await getAllDevices();
+                setDevices(data);
+            } catch (err: any) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        loadDevices();
+    }, []);
+
+    if (loading) {
+        return (
+            <div className="h-screen bg-background flex items-center justify-center">
+                <p className="text-gray">로딩 중...</p>
+            </div>
+        );
+    }
+
+    if (error) {
+        return (
+            <div className="h-screen bg-background flex items-center justify-center">
+                <p className="text-red-500">오류: {error}</p>
+            </div>
+        );
+    }
 
     return (
         <div className="h-screen bg-background flex flex-col">
@@ -104,10 +127,10 @@ export default function DevicesPage() {
             </main>
 
             {/* Add Device Button */}
-            <footer className="px-4 pb-6 pt-3 bg-background">
+            <footer className="px-4 pb-6 pt-3 bg-background space-y-2">
                 <button
                     onClick={() => router.push("/pairing")}
-                    className="w-full py-3.5 bg-secondary text-white rounded-xl text-sm font-semibold hover:opacity-90 active:scale-[0.98] transition-all"
+                    className="w-full py-3.5 bg-primary text-white rounded-xl text-sm font-semibold hover:opacity-90 active:scale-[0.98] transition-all"
                 >
                     기기 추가하기
                 </button>

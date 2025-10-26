@@ -8,6 +8,27 @@ config.autoAddCss = false;
 export const metadata: Metadata = {
     title: "CORRECT - 최고의 자세를 반듯다",
     description: "자세 교정 스마트 의자",
+    openGraph: {
+        title: "CORRECT - 최고의 자세를 반듯다",
+        description: "자세 교정 스마트 의자로 건강한 자세를 유지하세요",
+        url: "https://correct.app",
+        siteName: "CORRECT",
+        locale: "ko_KR",
+        type: "website",
+    },
+    twitter: {
+        card: "summary_large_image",
+        title: "CORRECT - 최고의 자세를 반듯다",
+        description: "자세 교정 스마트 의자로 건강한 자세를 유지하세요",
+    },
+    keywords: ["자세 교정", "스마트 의자", "건강", "허리 통증", "바른 자세"],
+    authors: [{ name: "CORRECT Team" }],
+    creator: "CORRECT Team",
+    publisher: "CORRECT",
+    robots: {
+        index: true,
+        follow: true,
+    },
 };
 
 export const viewport: Viewport = {

@@ -9,7 +9,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
     getDeviceFullData,
     Device,
@@ -97,6 +97,119 @@ const Section = ({
         {children}
     </section>
 );
+
+/** ---------------------- 6×6 Heatmap (추가) ---------------------- */
+function Heatmap6x6({
+    data,
+    url = "/api/heatmap",
+    title = "압력 분포(6×6)",
+}: {
+    data?: number[];
+    url?: string;
+    title?: string;
+}) {
+    const DEFAULT_DATA = [
+        0, 0, 0, 0, 0, 0.417, 0.752, 0, 0.313, 0, 7, 0, 0, 0, 85, 5.727, 84, 0,
+        0.228, 0, 0, 0, 0, 0, 0, 0, 0, 3.9, 11.133, 0, 0, 0, 0, 6.143, 0, 0,
+    ];
+
+    const [remote, setRemote] = useState<number[] | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [err, setErr] = useState<string | null>(null);
+
+    useEffect(() => {
+        let abort = false;
+        async function run() {
+            try {
+                setLoading(true);
+                setErr(null);
+                const res = await fetch(url, { cache: "no-store" });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const json = await res.json();
+                if (!abort && Array.isArray(json) && json.length >= 36) {
+                    setRemote(json.slice(0, 36));
+                }
+            } catch (e: any) {
+                if (!abort) setErr(e?.message ?? "fetch error");
+            } finally {
+                if (!abort) setLoading(false);
+            }
+        }
+        if (!data) run();
+        return () => {
+            abort = true;
+        };
+    }, [data, url]);
+
+    const values = useMemo(() => {
+        const arr = data ?? remote ?? DEFAULT_DATA;
+        if (arr.length < 36)
+            return [...arr, ...new Array(36 - arr.length).fill(0)];
+        return arr.slice(0, 36);
+    }, [data, remote]);
+
+    const maxVal = useMemo(() => {
+        const m = Math.max(...values, 0);
+        return m <= 0 ? 1 : m;
+    }, [values]);
+
+    const cellColor = (v: number) => {
+        const ratio = Math.min(1, Math.sqrt(Math.max(0, v) / maxVal));
+        const lightness = 95 - ratio * 55; // 95% → 40%
+        return `hsl(220 90% ${lightness}%)`;
+    };
+
+    return (
+        <div className="bg-white rounded-xl p-4 border border-border">
+            <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-gray">{title}</p>
+                {loading ? (
+                    <span className="text-xs text-gray animate-pulse">
+                        불러오는 중…
+                    </span>
+                ) : err ? (
+                    <span className="text-xs text-red-500">데이터 오류</span>
+                ) : null}
+            </div>
+
+            <div
+                className="grid gap-1"
+                style={{ gridTemplateColumns: "repeat(6, minmax(0, 1fr))" }}
+            >
+                {values.map((v, i) => (
+                    <div
+                        key={i}
+                        className="aspect-square rounded-md border border-border-light flex items-center justify-center text-[10px] text-gray"
+                        style={{ background: cellColor(v) }}
+                        title={`${v}`}
+                    >
+                        <span className="opacity-70">{formatVal(v)}</span>
+                    </div>
+                ))}
+            </div>
+
+            <div className="mt-3">
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray">낮음</span>
+                    <div
+                        className="h-2 flex-1 rounded-full"
+                        style={{
+                            background:
+                                "linear-gradient(90deg, hsl(220 90% 95%) 0%, hsl(220 90% 40%) 100%)",
+                        }}
+                    />
+                    <span className="text-[10px] text-gray">높음</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function formatVal(n: number) {
+    if (Math.abs(n) >= 10) return Math.round(n).toString();
+    if (n === 0) return "0";
+    return Number(n.toFixed(2)).toString();
+}
 
 export default function DeviceDetailPage({
     params,
@@ -296,6 +409,11 @@ export default function DeviceDetailPage({
                             </div>
 
                             <PostureChart chartData={postureData.chart_data} />
+
+                            {/* 6×6 히트맵 (추가) */}
+                            <div className="mt-4">
+                                <Heatmap6x6 />
+                            </div>
                         </div>
                     </div>
                 </Section>

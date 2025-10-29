@@ -119,27 +119,44 @@ function Heatmap6x6({
 
     useEffect(() => {
         let abort = false;
-        async function run() {
+        let timer: NodeJS.Timeout | null = null;
+
+        async function fetchData() {
             try {
-                setLoading(true);
                 setErr(null);
                 const res = await fetch(url, { cache: "no-store" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const json = await res.json();
-                if (!abort && Array.isArray(json) && json.length >= 36) {
-                    setRemote(json.slice(0, 36));
+                const text = await res.text();
+
+                let parsed: any;
+                try {
+                    parsed = JSON.parse(text);
+                } catch {
+                    parsed = text
+                        .trim()
+                        .split(/[\s,;\n\r]+/)
+                        .map((t) => Number(t))
+                        .filter((n) => !Number.isNaN(n));
+                }
+
+                const arr = Array.isArray(parsed) ? parsed : [];
+                if (!abort && arr.length >= 36) {
+                    setRemote(arr.slice(0, 36));
                 }
             } catch (e: any) {
                 if (!abort) setErr(e?.message ?? "fetch error");
-            } finally {
-                if (!abort) setLoading(false);
             }
         }
-        if (!data) run();
+
+        // 1초마다 주기적으로 호출
+        fetchData();
+        timer = setInterval(fetchData, 1000);
+
         return () => {
             abort = true;
+            if (timer) clearInterval(timer);
         };
-    }, [data, url]);
+    }, [url]);
 
     const values = useMemo(() => {
         const arr = data ?? remote ?? DEFAULT_DATA;

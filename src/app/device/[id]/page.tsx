@@ -97,8 +97,6 @@ const Section = ({
         {children}
     </section>
 );
-
-/** ---------------------- 6×6 Heatmap (추가) ---------------------- */
 function Heatmap6x6({
     data,
     url = "/api/heatmap",
@@ -123,34 +121,97 @@ function Heatmap6x6({
 
         async function fetchData() {
             try {
+                if (!abort) setLoading(true);
                 setErr(null);
+
                 const res = await fetch(url, { cache: "no-store" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const text = await res.text();
 
-                let parsed: any;
-                try {
-                    parsed = JSON.parse(text);
-                } catch {
-                    parsed = text
-                        .trim()
-                        .split(/[\s,;\n\r]+/)
-                        .map((t) => Number(t))
-                        .filter((n) => !Number.isNaN(n));
+                // 1) content-type이 json이면 json() 우선
+                const ct = res.headers.get("content-type") || "";
+                let body: any;
+                if (ct.includes("application/json")) {
+                    body = await res.json();
+                } else {
+                    // 텍스트 → BOM/잡음 제거
+                    let text = await res.text();
+                    text = text.replace(/^\uFEFF/, ""); // BOM 제거
+                    text = text.replace(/^\)\]\}',?\s*\n?/, ""); // )]}', 제거(있다면)
+                    // JSON 시도
+                    try {
+                        body = JSON.parse(text);
+                    } catch {
+                        body = text; // 그대로 문자열로 보관 (아래에서 처리)
+                    }
                 }
 
-                const arr = Array.isArray(parsed) ? parsed : [];
-                if (!abort && arr.length >= 36) {
-                    setRemote(arr.slice(0, 36));
+                // 2) 어떤 형태든 숫자 배열로 정규화
+                const nums = normalizeToNumberArray(body);
+
+                if (!abort && nums.length > 0) {
+                    setRemote(nums.slice(0, 36));
                 }
             } catch (e: any) {
                 if (!abort) setErr(e?.message ?? "fetch error");
+            } finally {
+                if (!abort) setLoading(false);
             }
         }
 
-        // 1초마다 주기적으로 호출
+        /** 응답이 [..], "[..]", {data:[..]}, "0,1,2", "0 1 2" 등 어떤 형태라도 숫자배열로 변환 */
+        function normalizeToNumberArray(input: any): number[] {
+            // 배열이면 그대로 숫자화
+            if (Array.isArray(input)) {
+                return input
+                    .map((v) => Number(v))
+                    .filter((n) => Number.isFinite(n));
+            }
+
+            // 객체면 흔한 키 찾아서 배열 추출
+            if (input && typeof input === "object") {
+                const keys = ["data", "values", "items", "result", "payload"];
+                for (const k of keys) {
+                    if (Array.isArray((input as any)[k])) {
+                        return (input as any)[k]
+                            .map((v: any) => Number(v))
+                            .filter((n: number) => Number.isFinite(n));
+                    }
+                }
+            }
+
+            // 문자열일 수 있음: 한 번 더 JSON 파싱 시도 (이중-인코딩)
+            if (typeof input === "string") {
+                const s = input.trim();
+
+                // 대괄호로 시작하면 JSON 배열일 가능성 큼
+                if (s.startsWith("[") && s.endsWith("]")) {
+                    try {
+                        const arr = JSON.parse(s);
+                        if (Array.isArray(arr)) {
+                            return arr
+                                .map((v) => Number(v))
+                                .filter((n) => Number.isFinite(n));
+                        }
+                    } catch {
+                        /* 무시하고 아래로 */
+                    }
+                }
+
+                // 순수 숫자 목록(CSV/공백구분) → 숫자 추출(정규식)
+                const matches = s.match(/-?\d+(\.\d+)?/g);
+                if (matches && matches.length) {
+                    return matches
+                        .map((t) => Number(t))
+                        .filter((n) => Number.isFinite(n));
+                }
+            }
+
+            return [];
+        }
+
+        // 최초 1회 + 5초마다
         fetchData();
-        timer = setInterval(fetchData, 1000);
+        timer = setInterval(fetchData, 5000);
 
         return () => {
             abort = true;
@@ -158,11 +219,17 @@ function Heatmap6x6({
         };
     }, [url]);
 
+    // 표시용 값(우선순위: props > 원격 > 기본)
     const values = useMemo(() => {
-        const arr = data ?? remote ?? DEFAULT_DATA;
-        if (arr.length < 36)
-            return [...arr, ...new Array(36 - arr.length).fill(0)];
-        return arr.slice(0, 36);
+        const source = data ?? remote ?? DEFAULT_DATA;
+        const arr = Array.isArray(source) ? source : DEFAULT_DATA;
+        const onlyNums = arr
+            .map((v) => Number(v))
+            .filter((n) => Number.isFinite(n));
+        if (onlyNums.length < 36) {
+            return [...onlyNums, ...Array(36 - onlyNums.length).fill(0)];
+        }
+        return onlyNums.slice(0, 36);
     }, [data, remote]);
 
     const maxVal = useMemo(() => {
@@ -170,11 +237,15 @@ function Heatmap6x6({
         return m <= 0 ? 1 : m;
     }, [values]);
 
+    // 색상 매핑 (기존 스타일 유지: sqrt로 하이라이트 완화)
     const cellColor = (v: number) => {
         const ratio = Math.min(1, Math.sqrt(Math.max(0, v) / maxVal));
         const lightness = 95 - ratio * 55; // 95% → 40%
         return `hsl(220 90% ${lightness}%)`;
     };
+
+    // 에러 배지: 로딩 끝 + 에러 + 원격/props 모두 없을 때만
+    const showError = !loading && !!err && !(data || remote);
 
     return (
         <div className="bg-white rounded-xl p-4 border border-border">
@@ -184,7 +255,7 @@ function Heatmap6x6({
                     <span className="text-xs text-gray animate-pulse">
                         불러오는 중…
                     </span>
-                ) : err ? (
+                ) : showError ? (
                     <span className="text-xs text-red-500">데이터 오류</span>
                 ) : null}
             </div>
@@ -200,7 +271,9 @@ function Heatmap6x6({
                         style={{ background: cellColor(v) }}
                         title={`${v}`}
                     >
-                        <span className="opacity-70">{formatVal(v)}</span>
+                        <span className="opacity-70 tabular-nums">
+                            {String(v)}
+                        </span>
                     </div>
                 ))}
             </div>
